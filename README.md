@@ -54,6 +54,6 @@ python namascript.py
 ```
 
 📌 KREDIT:
-Uji coba
+Uji coba 😁
 
 ====================================================
