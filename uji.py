@@ -4,7 +4,7 @@ import shutil
 import re
 import random
 import pyfiglet
-import subprocess  # <<<--- TAMBAHAN BARU
+import subprocess
 from colorama import Fore, Style, init
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -56,8 +56,8 @@ def inisialisasi_browser(profile_path):
     options.add_experimental_option('excludeSwitches', ['enable-logging'])
     
     # --- PENGATURAN HEADLESS ---
-    #options.add_argument("--headless") #TAMBAHKAN PAGAR DI DEPANNYA UNTUK KELUAR MODE HEADLESS
-    #options.add_argument("--disable-gpu") #TAMBAHKAN PAGAR DI DEPANNYA UNTUK KELUAR MODE HEADLESS
+    #options.add_argument("--headless") #HAPUS TANDA PAGAR DI DEPANNYA UNTUK MODE HEADLESS
+    #options.add_argument("--disable-gpu") #HAPUS TANDA PAGAR DI DEPANNYA UNTUK MODE HEADLESS
     
     try:
         service = Service(
@@ -200,4 +200,5 @@ def main():
     print(Fore.CYAN + "✅ SEMUA TARGET SELESAI DIPROSES".center(60))
     print(Fore.CYAN + "="*60)
 if __name__ == "__main__":
+
     main()
